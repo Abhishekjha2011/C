@@ -1,0 +1,129 @@
+#include <stdio.h>
+#include <pthread.h>
+#include <stdbool.h>
+
+#define MAX_READERS 5 // Maximum number of readers
+#define MAX_WRITERS 2 // Maximum number of writers
+
+int data = 0; // Shared data
+int readers_count = 0; // Number of active readers
+int writers_count = 0; // Number of active writers
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER; // Mutex for synchronization
+pthread_cond_t read_cv = PTHREAD_COND_INITIALIZER; // Condition variable for readers
+pthread_cond_t write_cv = PTHREAD_COND_INITIALIZER; // Condition variable for writers
+
+bool stop_flag = false; // Termination condition flag
+
+void *reader(void *arg) {
+    int id = *(int *)arg;
+    while (!stop_flag) { // Check termination condition
+        pthread_mutex_lock(&mutex);
+
+        // Wait if there are active writers
+        while (writers_count > 0) {
+            pthread_cond_wait(&read_cv, &mutex);
+        }
+
+        readers_count++; // Increment readers count
+        printf("Reader %d read data = %d\n", id, data);
+
+        pthread_mutex_unlock(&mutex);
+
+        // Simulate reading
+        sleep(1);
+
+        pthread_mutex_lock(&mutex);
+
+        readers_count--; // Decrement readers count
+
+        // Signal writer if this is the last reader
+        if (readers_count == 0) {
+            pthread_cond_signal(&write_cv);
+        }
+//mutex
+        pthread_mutex_unlock(&mutex);
+
+        // Simulate delay before next read
+        sleep(2);
+    }
+    return NULL;
+}
+
+void *writer(void *arg) {
+    int id = *(int *)arg;
+    while (!stop_flag) { // Check termination condition
+        pthread_mutex_lock(&mutex);
+
+        // Wait if there are active readers or writers
+        while (readers_count > 0 || writers_count > 0) {
+            pthread_cond_wait(&write_cv, &mutex);
+        }
+
+        writers_count++; // Increment writers count
+        data++; // Write to shared data
+        printf("Writer %d wrote data = %d\n", id, data);
+
+        pthread_mutex_unlock(&mutex);
+
+        // Simulate writing
+        sleep(1);
+
+        pthread_mutex_lock(&mutex);
+
+        writers_count--; // Decrement writers count
+
+        // Signal readers and writers
+        pthread_cond_broadcast(&read_cv);
+        pthread_cond_signal(&write_cv);
+
+        pthread_mutex_unlock(&mutex);
+
+        // Simulate delay before next write
+        sleep(2);
+    }
+    return NULL;
+}
+
+int main() {
+    // Create reader threads 
+    pthread_t reader_threads[MAX_READERS];
+    int reader_ids[MAX_READERS];
+    int i;
+    for ( i = 0; i < MAX_READERS; i++) {
+        reader_ids[i] = i + 1;
+        pthread_create(&reader_threads[i], NULL, reader, &reader_ids[i]);
+    }
+
+    // Create writer threads
+    pthread_t writer_threads[MAX_WRITERS];
+    int writer_ids[MAX_WRITERS];
+    for ( i = 0; i < MAX_WRITERS; i++) {
+        writer_ids[i] = i + 1;
+        pthread_create(&writer_threads[i], NULL, writer, &writer_ids[i]);
+    }
+
+    // Wait for termination condition
+    sleep(10); // Sleep for 10 seconds
+
+    // Set termination flag
+    stop_flag = true;
+
+    // Wait for reader threads to finish
+    for (i = 0; i < MAX_READERS; i++) {
+pthread_join(reader_threads[i], NULL);
+}
+// Wait for writer threads to finish
+for ( i = 0; i < MAX_WRITERS; i++) {
+    pthread_join(writer_threads[i], NULL);
+}
+
+// Cleanup mutex and condition variables
+pthread_mutex_destroy(&mutex);
+pthread_cond_destroy(&read_cv);
+pthread_cond_destroy(&write_cv);
+
+return 0;
+
+
+}
